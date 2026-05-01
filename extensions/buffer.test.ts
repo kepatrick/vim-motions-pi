@@ -48,13 +48,20 @@ describe("VimBuffer", () => {
 		expect(buffer.text).toBe("worldhello ");
 	});
 
-	it("applies inner word text object ranges", () => {
+	it("applies inner word and quote text object ranges", () => {
 		const buffer = new VimBuffer("foo bar baz", 5);
 		const range = buffer.textObjectRange("i", "w");
 		expect(range).toEqual({ start: 4, end: 7, linewise: false });
 		buffer.applyRange(range!);
 		expect(buffer.text).toBe("foo  baz");
 		expect(buffer.register).toEqual({ text: "bar", linewise: false });
+
+		const quoted = new VimBuffer('say "hello world" end', 8);
+		const quoteRange = quoted.textObjectRange("i", '"');
+		expect(quoteRange).toEqual({ start: 5, end: 16, linewise: false });
+		quoted.applyRange(quoteRange!);
+		expect(quoted.text).toBe('say "" end');
+		expect(quoted.register).toEqual({ text: "hello world", linewise: false });
 	});
 
 	it("resolves visual-line selection range", () => {

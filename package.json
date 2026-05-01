@@ -1,7 +1,7 @@
 {
   "name": "vim-motions-pi",
   "version": "0.1.1",
-  "description": "A Vim-like editing extension for pi",
+  "description": "A focused Vim-style editing layer for pi, with motions, text objects, visual selections, and clipboard sync",
   "license": "MIT",
   "author": "Patrick",
   "repository": {
@@ -25,6 +25,7 @@
     "extensions/core.ts",
     "extensions/clipboard.ts",
     "README.md",
+    "demo.gif",
     "LICENSE"
   ],
   "scripts": {

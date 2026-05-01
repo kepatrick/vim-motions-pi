@@ -223,7 +223,9 @@ export function runKey(state: HarnessState, data: string): HarnessState {
 	}
 
 	if (state.pendingObjectPrefix) {
-		if (data === "w" || data === "W" || data === "p") applyTextObject(state, state.pendingObjectPrefix, data as TextObjectKind);
+		if (data === "w" || data === "W" || data === "p" || data === '"' || data === "'") {
+			applyTextObject(state, state.pendingObjectPrefix, data as TextObjectKind);
+		}
 		state.pendingObjectPrefix = null;
 		state.pendingTextObject = null;
 		state.pendingTextObjectOp = null;
