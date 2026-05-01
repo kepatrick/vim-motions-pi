@@ -1,0 +1,42 @@
+{
+  "name": "vim-motions-pi",
+  "version": "0.1.0",
+  "description": "Vim motion extension for pi",
+  "license": "MIT",
+  "author": "Patrick",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kepatrick/vim-motions-pi"
+  },
+  "homepage": "https://github.com/kepatrick/vim-motions-pi#readme",
+  "bugs": {
+    "url": "https://github.com/kepatrick/vim-motions-pi/issues"
+  },
+  "keywords": ["pi-package", "pi", "vim", "motion", "extension"],
+  "files": [
+    "extensions/vim-motion.ts",
+    "extensions/buffer.ts",
+    "extensions/core.ts",
+    "extensions/clipboard.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": ["./extensions/vim-motion.ts"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "vitest": "^3.2.4"
+  }
+}
