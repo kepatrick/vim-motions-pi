@@ -1,12 +1,12 @@
 {
   "name": "vim-motions-pi",
   "version": "0.1.0",
-  "description": "Vim motion extension for pi",
+  "description": "A Vim-like editing extension for pi",
   "license": "MIT",
   "author": "Patrick",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kepatrick/vim-motions-pi"
+    "url": "git+https://github.com/kepatrick/vim-motions-pi.git"
   },
   "homepage": "https://github.com/kepatrick/vim-motions-pi#readme",
   "bugs": {
