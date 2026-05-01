@@ -1,6 +1,6 @@
 {
   "name": "vim-motions-pi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Vim-like editing extension for pi",
   "license": "MIT",
   "author": "Patrick",
@@ -12,7 +12,13 @@
   "bugs": {
     "url": "https://github.com/kepatrick/vim-motions-pi/issues"
   },
-  "keywords": ["pi-package", "pi", "vim", "motion", "extension"],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "vim",
+    "motion",
+    "extension"
+  ],
   "files": [
     "extensions/vim-motion.ts",
     "extensions/buffer.ts",
@@ -29,7 +35,9 @@
     "access": "public"
   },
   "pi": {
-    "extensions": ["./extensions/vim-motion.ts"]
+    "extensions": [
+      "./extensions/vim-motion.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
