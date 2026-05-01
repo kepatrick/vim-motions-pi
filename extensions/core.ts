@@ -165,6 +165,12 @@ export function normalizeText(text: string): string {
 	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "    ");
 }
 
+function isEscaped(text: string, index: number): boolean {
+	let backslashes = 0;
+	for (let i = index - 1; i >= 0 && text[i] === "\\"; i--) backslashes++;
+	return backslashes % 2 === 1;
+}
+
 export function expandWordObject(text: string, index: number, around: boolean, bigWord: boolean): Range {
 	const bounds = lineBounds(text, index);
 	const probe = clamp(index, bounds.start, Math.max(bounds.start, bounds.end - 1));
@@ -222,6 +228,26 @@ export function expandWordObject(text: string, index: number, around: boolean, b
 	}
 
 	return { start, end, linewise: false };
+}
+
+export function expandDelimitedObject(text: string, index: number, around: boolean, delimiter: "\"" | "'"): Range | null {
+	const bounds = lineBounds(text, index);
+	const positions: number[] = [];
+	for (let i = bounds.start; i < bounds.end; i++) {
+		if (text[i] === delimiter && !isEscaped(text, i)) positions.push(i);
+	}
+	if (positions.length < 2) return null;
+
+	const cursor = clamp(index, bounds.start, bounds.end);
+	for (let i = 0; i + 1 < positions.length; i += 2) {
+		const open = positions[i]!;
+		const close = positions[i + 1]!;
+		if (cursor >= open && cursor <= close) {
+			if (around) return { start: open, end: close + 1, linewise: false };
+			return { start: open + 1, end: close, linewise: false };
+		}
+	}
+	return null;
 }
 
 export function expandParagraphObject(text: string, index: number): Range {

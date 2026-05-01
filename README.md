@@ -1,8 +1,24 @@
 # vim-motions-pi
 
-A Vim-style motion extension for [pi](https://pi.dev).
+[![npm version](https://img.shields.io/npm/v/vim-motions-pi.svg)](https://www.npmjs.com/package/vim-motions-pi)
 
-It implements a focused subset of Vim editing behavior: modes, motions, operators, text objects, a single unnamed register, and a few editing helpers.
+A focused Vim-style editing layer for [pi](https://pi.dev): fast motions, text objects, visual selections, and optional clipboard sync.
+
+It brings the essential Vim editing loop into pi without the full Vim complexity.
+
+## At a glance
+
+Edit faster inside pi, with the Vim commands people actually reach for.
+
+- Move with `h j k l`, `w b e`, `0 ^ $`, and `gg G`
+- Change text with `dw`, `ciw`, `dd`, `yy`, `p`, `u`, and `r<char>`
+- Select with `v` / `V`, then yank, delete, or paste
+- Target regions with text objects like `iw`, `aw`, `ip`, and `ap`
+- Mirror yank/delete/change operations to the system clipboard when enabled
+
+## Quick demo
+
+![Quick demo of vim-motions-pi](./demo.gif)
 
 ## Install
 
@@ -34,43 +50,35 @@ pi -e ./extensions/vim-motion.ts
 - `visual`
 - `visual-line`
 
-### Counts
-- Prefix counts are supported for motions and many commands.
-- Examples: `3w`, `2dd`, `5x`, `4G`
-
-### Motions
+### Core motions
 - Character motions: `h j k l`
 - Word motions: `w b e`
 - Line motions: `0 ^ $`
 - Buffer motions: `gg G`
+- Find motions: `f F t T`
+- Repeat find: `;` and `,`
 
-### Find in the current line
-- `f F t T`
-- `;` repeats the last find
-- `,` repeats the last find in reverse
-
-### Operators
-- `d y c`
-- With motions: `dw`, `yw`, `cw`, `d$`, `y^`, etc.
+### Editing actions
+- Operators: `d y c`
+- Motion-based edits: `dw`, `yw`, `cw`, `d$`, `y^`, etc.
 - Linewise forms: `dd`, `yy`, `cc`, `D`, `C`, `S`
-- Visual selections are also supported
+- Direct helpers: `x`, `X`, `p`, `P`, `u`, `r<char>`, `o`, `O`, `J`, `i`, `I`, `a`, `A`
+
+### Selection
+- `v` enters visual mode
+- `V` enters visual-line mode
+- Visual selections support `y`, `d`, and `p`
 
 ### Text objects
-- `iw aw`
-- `iW aW`
-- `ip ap`
-- Works with operators, for example: `diw`, `yaw`, `ciW`, `dap`
+- `iw`, `aw`
+- `iW`, `aW`
+- `i"`, `a"`
+- `ip`, `ap`
+- Works with operators, for example: `diw`, `yaw`, `ciW`, `ci"`, `dap`
 
-### Editing helpers
-- `x` / `X` delete forward or backward
-- `p` / `P` paste after or before the cursor
-- `u` undo
-- `r<char>` replace one character
-- `o` / `O` open a new line below or above
-- `J` join with the next line
-- `i` / `I` enter insert mode at cursor / first non-blank on line
-- `a` / `A` enter insert mode after cursor / end of line
-- `v` / `V` enter visual / visual-line mode
+### Counts
+- Prefix counts are supported for motions and many commands
+- Examples: `3w`, `2dd`, `5x`, `4G`
 
 ## Visual mode notes
 - `o` swaps the visual selection ends.
@@ -79,12 +87,12 @@ pi -e ./extensions/vim-motion.ts
 - `p` / `P` replace the selection with the current register contents.
 
 ## Register behavior
-- Deletes and yanks are stored in a single unnamed register.
+- Yanks, deletes, and changes go to a single unnamed register.
 - `p` and `P` paste from that register.
-- Linewise operations preserve line breaks when appropriate.
+- Linewise operations keep line breaks when that makes sense.
 
 ## Optional clipboard sync
-This extension can mirror Vim's unnamed register to the system clipboard.
+Keep the unnamed register in sync with your system clipboard.
 
 Set one parameter:
 
@@ -93,21 +101,18 @@ VIM_MOTION_PI_CLIPBOARD=off|all|yank
 ```
 
 - `off`: disable clipboard sync
-- `all`: sync yank/delete/change to clipboard
+- `all`: sync yank, delete, and change operations
 - `yank`: sync only yank operations
 
-Use this command to change it inside pi:
+Change it inside pi with:
 
 ```text
 /vim-clipboard
 ```
 
-It opens a native select menu with the available modes.
+pi shows a short notification when the mode changes.
 
-pi shows a short notification on startup and after changes.
-
-When enabled, the unnamed register is mirrored to the system clipboard.
-It uses the usual system clipboard command on your OS (`pbcopy`, `clip`, `wl-copy`, `xclip`, or `xsel`) if available.
+When enabled, the extension uses the usual clipboard command on your OS (`pbcopy`, `clip`, `wl-copy`, `xclip`, or `xsel`) if available.
 
 ## Examples
 
@@ -123,13 +128,13 @@ f,      find the next comma
 
 ## Limitations
 
-This extension only affects the text input/editor area inside pi. It does not turn the whole application into Vim, and it does not apply to every UI component or global shortcut.
+This is a Vim-like subset, not full Vim.
 
-In insert mode, most keys are passed through to pi directly, except `Esc`, which switches back to normal mode.
+It only affects the text input/editor area inside pi, not the whole app.
 
-In normal / visual modes, some pi hotkeys may be intercepted by Vim-style key handling and may not work as expected.
+In insert mode, most keys pass through to pi directly, except `Esc`, which returns to normal mode.
 
-This is also a Vim-like subset, not full Vim.
+In normal / visual modes, some pi hotkeys may be intercepted by Vim-style key handling.
 
 Not supported:
 - search with `/` or `?`

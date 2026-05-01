@@ -1,5 +1,6 @@
 import {
 	clamp,
+	expandDelimitedObject,
 	expandParagraphObject,
 	expandWordObject,
 	firstNonBlankIndex,
@@ -17,7 +18,7 @@ import {
 
 export type BufferMotion = "w" | "b" | "e" | "0" | "^" | "$";
 export type TextObjectPrefix = "i" | "a";
-export type TextObjectKind = "w" | "W" | "p";
+export type TextObjectKind = "w" | "W" | "p" | '"' | "'";
 export type Register = {
 	text: string;
 	linewise: boolean;
@@ -201,6 +202,7 @@ export class VimBuffer {
 		if (kind === "w") return expandWordObject(this.text, this.cursorIndex, prefix === "a", false);
 		if (kind === "W") return expandWordObject(this.text, this.cursorIndex, prefix === "a", true);
 		if (kind === "p") return expandParagraphObject(this.text, this.cursorIndex);
+		if (kind === '"' || kind === "'") return expandDelimitedObject(this.text, this.cursorIndex, prefix === "a", kind);
 		return null;
 	}
 
