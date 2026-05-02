@@ -642,7 +642,7 @@ class VimEditor extends CustomEditor {
 		}
 
 		if (this.pendingObjectPrefix) {
-			if (data === "w" || data === "W" || data === "p") {
+			if (data === "w" || data === "W" || data === "p" || data === '"' || data === "'") {
 				this.pendingTextObject = data as TextObjectKind;
 				this.performTextObject(this.pendingObjectPrefix, this.pendingTextObject);
 			}
