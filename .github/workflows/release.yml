@@ -1,23 +1,40 @@
 name: release
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      confirm:
+        description: Confirm release and publish
+        required: true
+        type: boolean
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate branch
+        run: |
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Release only allowed on main"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -33,4 +50,6 @@ jobs:
       - name: Release and tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_CONFIRM: ${{ inputs.confirm }}
         run: ./scripts/release-main.sh

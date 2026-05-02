@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="$(node -p "require('./package.json').version")"
-TAG="v${VERSION}"
+BUMP="${RELEASE_BUMP:-}"
+CONFIRM="${RELEASE_CONFIRM:-false}"
 
-if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-  echo "Tag ${TAG} already exists; skipping release."
-  exit 0
+if [[ -z "${BUMP}" ]]; then
+  echo "RELEASE_BUMP is required (patch|minor|major)."
+  exit 1
+fi
+
+if [[ "${CONFIRM}" != "true" ]]; then
+  echo "Release not confirmed; set RELEASE_CONFIRM=true to continue."
+  exit 1
 fi
 
 echo "Running tests..."
@@ -15,13 +20,19 @@ npm test
 npm run test:coverage
 npm pack --dry-run
 
+git config user.name "github-actions[bot]"
+git config user.email "github-actions[bot]@users.noreply.github.com"
+
+echo "Bumping version (${BUMP})..."
+npm version "${BUMP}" -m "chore(release): %s"
+
+VERSION="$(node -p "require('./package.json').version")"
+TAG="v${VERSION}"
+
 echo "Publishing ${TAG}..."
 npm publish --access public
 
-echo "Creating tag ${TAG}..."
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git tag -a "${TAG}" -m "Release ${TAG}"
-git push origin "${TAG}"
+echo "Pushing commit and tag..."
+git push origin HEAD:main --follow-tags
 
 echo "Done: ${TAG}"
