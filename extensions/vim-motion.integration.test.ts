@@ -144,4 +144,20 @@ describe("vim-motion integration", () => {
 		editor.handleInput("d");
 		expect(editor.getText()).toBe("orld");
 	});
+
+	it("handles quoted text objects through the real editor", async () => {
+		const { editor } = await createEditorInstance();
+		editor.setText('say "hello world" end');
+		editor.handleInput("\x1b");
+		editor.handleInput("l");
+		editor.handleInput("l");
+		editor.handleInput("l");
+		editor.handleInput("l");
+		editor.handleInput("l");
+		editor.handleInput("c");
+		editor.handleInput("i");
+		editor.handleInput('"');
+		expect(editor.getText()).toBe('say "" end');
+		expect(editor.getCursor()).toEqual({ line: 0, col: 5 });
+	});
 });
