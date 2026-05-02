@@ -172,6 +172,11 @@ describe("key harness", () => {
 		expect(ciQuote.mode).toBe("insert");
 		expect(ciQuote.register).toEqual({ text: "hello world", linewise: false });
 
+		const ciApostrophe = runKeys("say 'hello world' end", ["escape", "c", "i", "'"], 8);
+		expect(ciApostrophe.text).toBe("say '' end");
+		expect(ciApostrophe.mode).toBe("insert");
+		expect(ciApostrophe.register).toEqual({ text: "hello world", linewise: false });
+
 		const dip = runKeys("one\ntwo\n\nthree\nfour\n", ["escape", "d", "i", "p"], 1);
 		expect(dip.text).toBe("\nthree\nfour\n");
 		expect(dip.register).toEqual({ text: "one\ntwo\n", linewise: true });

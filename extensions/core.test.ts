@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	expandDelimitedObject,
 	expandParagraphObject,
 	expandWordObject,
 	findCharInLine,
@@ -97,5 +98,15 @@ describe("text objects", () => {
 		const text = "alpha\n\nbeta\ngamma";
 		expect(expandParagraphObject(text, 1)).toEqual({ start: 0, end: 6, linewise: true });
 		expect(expandParagraphObject(text, 8)).toEqual({ start: 7, end: text.length, linewise: true });
+	});
+
+	it("expands quoted text objects", () => {
+		const text = 'say "hello world" end';
+		expect(expandDelimitedObject(text, 8, false, '"')).toEqual({ start: 5, end: 16, linewise: false });
+		expect(expandDelimitedObject(text, 8, true, '"')).toEqual({ start: 4, end: 17, linewise: false });
+
+		const apostrophe = "say 'hello world' end";
+		expect(expandDelimitedObject(apostrophe, 8, false, "'")).toEqual({ start: 5, end: 16, linewise: false });
+		expect(expandDelimitedObject(apostrophe, 8, true, "'")).toEqual({ start: 4, end: 17, linewise: false });
 	});
 });
