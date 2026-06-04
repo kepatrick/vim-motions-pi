@@ -15,6 +15,22 @@ describe("clipboardAttemptsForPlatform", () => {
 			{ command: "xsel", args: ["--clipboard", "--input"] },
 		]);
 	});
+
+	it("respects VIM_MOTION_PI_CLIPBOARD_COMMAND override", () => {
+		vi.stubEnv("VIM_MOTION_PI_CLIPBOARD_COMMAND", "my-copy --clipboard");
+		expect(clipboardAttemptsForPlatform("linux")).toEqual([
+			{ command: "my-copy", args: ["--clipboard"] },
+		]);
+		vi.unstubAllEnvs();
+	});
+
+	it("handles single-word custom command", () => {
+		vi.stubEnv("VIM_MOTION_PI_CLIPBOARD_COMMAND", "copy");
+		expect(clipboardAttemptsForPlatform("darwin")).toEqual([
+			{ command: "copy", args: [] },
+		]);
+		vi.unstubAllEnvs();
+	});
 });
 
 describe("tryClipboardWrite", () => {
@@ -44,5 +60,15 @@ describe("tryClipboardWrite", () => {
 		const run = vi.fn();
 		expect(tryClipboardWrite("", "darwin", run)).toBe(false);
 		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("uses custom command when env var is set", () => {
+		vi.stubEnv("VIM_MOTION_PI_CLIPBOARD_COMMAND", "custom-copy --flag");
+		const run = vi.fn().mockReturnValue({ status: 0 });
+		const ok = tryClipboardWrite("hello", "linux", run);
+		expect(ok).toBe(true);
+		expect(run).toHaveBeenCalledTimes(1);
+		expect(run.mock.calls[0]).toEqual(["custom-copy", ["--flag"], "hello"]);
+		vi.unstubAllEnvs();
 	});
 });

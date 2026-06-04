@@ -56,7 +56,7 @@ function copyToClipboard(text: string): void {
 	tryClipboardWrite(text, process.platform, (command, args, input) => spawnSync(command, args, {
 		input,
 		encoding: "utf8",
-		stdio: ["pipe", "ignore", "ignore"],
+		stdio: ["pipe", "inherit", "ignore"],
 	}));
 }
 
@@ -188,6 +188,14 @@ class VimEditor extends CustomEditor {
 	private lastFind: { kind: FindKind; ch: string; count: number } | null = null;
 	private register: Register = { text: "", linewise: false };
 	private visualAnchor: number = 0;
+	private escapeBuffer: string = "";
+
+	private getEscapeSequence(): string | null {
+		const env = process.env.VIM_MOTION_PI_ESCAPE_SEQUENCE;
+		if (!env) return null;
+		const seq = env.trim();
+		return seq.length >= 2 ? seq : null;
+	}
 
 	private renderIsFocused(): boolean {
 		return !!(this as any).focused;
@@ -601,6 +609,24 @@ class VimEditor extends CustomEditor {
 		}
 
 		if (this.mode === "insert") {
+			const seq = this.getEscapeSequence();
+			if (seq) {
+				this.escapeBuffer += data;
+				if (this.escapeBuffer.endsWith(seq)) {
+					// Remove the escape sequence characters from the buffer
+					const toRemove = seq.length;
+					for (let i = 0; i < toRemove - 1; i++) {
+						super.handleInput("\x7f"); // backspace
+					}
+					this.escapeBuffer = "";
+					this.setMode("normal");
+					return;
+				}
+				// Only keep the last N characters where N = sequence length
+				if (this.escapeBuffer.length > seq.length) {
+					this.escapeBuffer = this.escapeBuffer.slice(-seq.length);
+				}
+			}
 			super.handleInput(data);
 			return;
 		}
