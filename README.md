@@ -114,6 +114,30 @@ pi shows a short notification when the mode changes.
 
 When enabled, the extension uses the usual clipboard command on your OS (`pbcopy`, `clip`, `wl-copy`, `xclip`, or `xsel`) if available.
 
+### Custom clipboard command
+
+Override the auto-detected clipboard command with your own:
+
+```bash
+VIM_MOTION_PI_CLIPBOARD_COMMAND="my-clipboard-tool --copy"
+```
+
+The value is split on whitespace; the first word is the command and the rest are arguments. The selected text is passed via stdin.
+
+This is useful inside tmux/SSH sessions where `wl-copy` or `xclip` may not work, and you want to route clipboard through OSC 52 or another transport.
+
+## Custom escape sequence
+
+By default only `Esc` leaves insert mode. You can enable a two-key sequence such as `jk` or `jj`:
+
+```bash
+VIM_MOTION_PI_ESCAPE_SEQUENCE=jk
+```
+
+- The sequence must be at least two characters.
+- While typing in insert mode, the extension buffers keystrokes. When the buffer ends with the configured sequence, the sequence characters are deleted and the editor returns to normal mode.
+- If you partially match (e.g. typed `j` but then pressed `l`), the `j` is preserved and passed through.
+
 ## Examples
 
 ```text
