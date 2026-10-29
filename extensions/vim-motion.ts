@@ -157,21 +157,22 @@ function highlight(text: string, start: number, end: number): string {
 
 const BAR_CURSOR = "▏";
 
-// Swap pi's reverse-video block cursor for a thin bar, preserving cell width.
-// Focused: the cursor marker sits right before the cursor. Unfocused: the
-// cursor is the only reverse-video run on an editor line.
+// Only restyle the marked editor cursor, never other reverse-video UI content.
+// A bar can replace a blank cell, but over text use an underline so the original
+// grapheme (including wide/combining characters) remains visible at the same width.
 export function barCursor(line: string): string {
-	const restyle = (prefix: string, cursor: string, width: number) =>
-		prefix + BAR_CURSOR + " ".repeat(Math.max(0, width - 1));
 	const idx = line.indexOf(CURSOR_MARKER);
-	if (idx !== -1) {
-		const after = line.slice(idx + CURSOR_MARKER.length);
-		const m = after.match(/^\x1b\[7m([\s\S]*?)\x1b\[0m/);
-		if (m) return restyle(line.slice(0, idx + CURSOR_MARKER.length), m[0], visibleWidth(m[1]!)) + after.slice(m[0].length);
-	}
-	const m = line.match(/\x1b\[7m([\s\S]*?)\x1b\[0m/);
-	if (m) return restyle(line.slice(0, m.index!), m[0], visibleWidth(m[1]!)) + line.slice(m.index! + m[0].length);
-	return line;
+	if (idx === -1) return line;
+	const start = idx + CURSOR_MARKER.length;
+	const after = line.slice(start);
+	// Pi 1.4+ wraps fake cursors in APC markers; older hosts use reverse video.
+	// Keep the wire-format fallback so this also loads on hosts without the new exports.
+	const match = after.match(/^\x1b_pi:fc\x07([\s\S]*?)\x1b_pi:\/fc\x07/)
+		?? after.match(/^\x1b\[7m([\s\S]*?)\x1b\[(?:0|27)m/);
+	if (!match) return line;
+	const grapheme = match[1]!;
+	const cursor = grapheme === " " ? BAR_CURSOR : `\x1b[4m${grapheme}\x1b[0m`;
+	return line.slice(0, start) + cursor + after.slice(match[0].length);
 }
 
 function splitAtVisibleColumn(text: string, column: number): [string, string] {
@@ -639,7 +640,7 @@ class VimEditor extends CustomEditor {
 			const seq = this.getEscapeSequence();
 			// only single printable keystrokes feed the matcher; pastes and
 			// control sequences pass through untouched
-			if (seq && data.length === 1 && isPrintable(data)) {
+			if (seq && isPrintable(data) && !/[\u007f-\u009f]/.test(data)) {
 				const now = Date.now();
 				if (this.escapeTyped && now - this.escapeTypedAt > this.getEscapeWindowMs()) {
 					this.escapeTyped = "";
@@ -661,6 +662,10 @@ class VimEditor extends CustomEditor {
 					this.escapeTyped = data === seq[0] ? data : "";
 					this.escapeTypedAt = now;
 				}
+			} else {
+				// Movement, deletion, paste, and other control input invalidate
+				// the assumption that the prefix is immediately before the cursor.
+				this.escapeTyped = "";
 			}
 			super.handleInput(data);
 			return;

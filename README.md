@@ -58,6 +58,8 @@ pi -e ./extensions/vim-motion.ts
 - Find motions: `f F t T`
 - Repeat find: `;` and `,`
 
+In insert mode, the focused cursor appears as a thin bar on a blank cell and an underline over text, preserving the character underneath. Normal mode keeps the block cursor. Unfocused cursors retain pi's default rendering.
+
 ### Editing actions
 - Operators: `d y c`
 - Motion-based edits: `dw`, `yw`, `cw`, `d$`, `y^`, etc.
@@ -138,7 +140,7 @@ VIM_MOTION_PI_ESCAPE_SEQUENCE=jk
 - Keys are inserted instantly as you type. When the sequence completes within the window (default 100 ms), the already-typed sequence characters are deleted and the editor returns to normal mode.
 - If the next key arrives after the window, is a different key, or is a real `Esc`, everything stays as typed.
 - Tune the window with `VIM_MOTION_PI_ESCAPE_TIMEOUT_MS` (e.g. `50` for a tighter escape, `300` for more slack).
-- Only single printable keystrokes feed the matcher; pasted text and control sequences pass through untouched.
+- Only consecutive single printable keystrokes feed the matcher. Pasted text, arrow keys, Backspace, and other control input pass through unchanged and cancel any pending sequence prefix.
 
 ## Examples
 

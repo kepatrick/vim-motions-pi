@@ -169,15 +169,39 @@ describe("vim-motion integration", () => {
 		const { CURSOR_MARKER, visibleWidth } = await import("@mariozechner/pi-tui");
 
 		// focused: marker + reverse-video cursor
-		const focused = `${CURSOR_MARKER}\x1b[7mab\x1b[0mcd`;
-		expect(barCursor(focused)).toBe(`${CURSOR_MARKER}▏ cd`);
+		const focused = `${CURSOR_MARKER}\x1b[7m \x1b[0mcd`;
+		expect(barCursor(focused)).toBe(`${CURSOR_MARKER}▏cd`);
 		expect(visibleWidth(barCursor(focused))).toBe(visibleWidth(focused));
 
-		// unfocused (status panel has focus): no marker
-		expect(barCursor("\x1b[7m \x1b[0m")).toBe("▏");
+		// Without a marker, a reverse-video run may belong to another UI element.
+		expect(barCursor("\x1b[7m \x1b[0m")).toBe("\x1b[7m \x1b[0m");
 
 		// no cursor
 		expect(barCursor("plain")).toBe("plain");
+	});
+
+	it.each(["b", "中", "😀", "e\u0301"])("preserves the cursor grapheme %s and its display width", async (grapheme) => {
+		const { barCursor } = await import("./vim-motion");
+		const { CURSOR_MARKER, visibleWidth } = await import("@mariozechner/pi-tui");
+		const line = `a${CURSOR_MARKER}\x1b[7m${grapheme}\x1b[0mc`;
+		expect(barCursor(line)).toBe(`a${CURSOR_MARKER}\x1b[4m${grapheme}\x1b[0mc`);
+		expect(visibleWidth(barCursor(line))).toBe(visibleWidth(line));
+	});
+
+	it.each([" ", "b", "中", "😀", "e\u0301"])("supports Pi 1.4 fake cursor markers over %j", async (grapheme) => {
+		const { barCursor } = await import("./vim-motion");
+		const { CURSOR_MARKER, visibleWidth } = await import("@mariozechner/pi-tui");
+		const line = `a${CURSOR_MARKER}\x1b_pi:fc\x07${grapheme}\x1b_pi:/fc\x07c`;
+		const cursor = grapheme === " " ? "▏" : `\x1b[4m${grapheme}\x1b[0m`;
+		expect(barCursor(line)).toBe(`a${CURSOR_MARKER}${cursor}c`);
+		expect(visibleWidth(barCursor(line))).toBe(visibleWidth(`a${CURSOR_MARKER}${grapheme}c`));
+	});
+
+	it("does not restyle unrelated reverse-video content", async () => {
+		const { barCursor } = await import("./vim-motion");
+		const { CURSOR_MARKER } = await import("@mariozechner/pi-tui");
+		const line = `\x1b[7msuggestion\x1b[0m${CURSOR_MARKER}plain`;
+		expect(barCursor(line)).toBe(line);
 	});
 
 	describe("escape sequence window", () => {
@@ -244,6 +268,23 @@ describe("vim-motion integration", () => {
 			expect((editor as any).mode).toBe("insert");
 			expect(editor.inserted).toEqual(["j", "k"]);
 		});
+
+		it.each(["\x1b[D", "\x7f", "\b", "\r", "\t", "\x03", "pasted text", "\x1b[200~paste\x1b[201~"])(
+			"cancels a pending prefix on intervening input %j", async (input) => {
+				process.env.VIM_MOTION_PI_ESCAPE_SEQUENCE = "jk";
+				const { editor } = await createEditorInstance();
+				editor.handleInput("j");
+				editor.handleInput(input);
+				editor.handleInput("k");
+				expect((editor as any).mode).toBe("insert");
+				expect(editor.inserted).toEqual(["j", input, "k"]);
+				// A new uninterrupted sequence should still work.
+				editor.handleInput("j");
+				editor.handleInput("k");
+				expect((editor as any).mode).toBe("normal");
+				expect(editor.inserted).toEqual(["j", input, "k", "j", "\x7f"]);
+			},
+		);
 
 		it("passes multi-char input through without matching", async () => {
 			process.env.VIM_MOTION_PI_ESCAPE_SEQUENCE = "jk";
