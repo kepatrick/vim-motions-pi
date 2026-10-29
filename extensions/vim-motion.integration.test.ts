@@ -145,6 +145,30 @@ describe("vim-motion integration", () => {
 		expect(editor.getText()).toBe("orld");
 	});
 
+	it.each([
+		{ name: "single character", text: "abc", keys: "v", remaining: "bc", deleted: "a", linewise: false },
+		{ name: "forward selection", text: "hello world", keys: "vw", remaining: "orld", deleted: "hello w", linewise: false },
+		{ name: "backward selection", text: "abcde", keys: "llvhh", remaining: "de", deleted: "abc", linewise: false },
+		{ name: "whole line", text: "one\ntwo\nthree", keys: "V", remaining: "two\nthree", deleted: "one\n", linewise: true },
+		{ name: "multiple whole lines", text: "one\ntwo\nthree", keys: "Vw", remaining: "three", deleted: "one\ntwo\n", linewise: true },
+		{ name: "text object", text: "hello world", keys: "viw", remaining: " world", deleted: "hello", linewise: false },
+		{ name: "entire buffer", text: "abc", keys: "v$", remaining: "", deleted: "abc", linewise: false },
+		{ name: "empty buffer", text: "", keys: "v", remaining: "", deleted: "", linewise: false },
+	])("deletes $name with visual x", async ({ text, keys, remaining, deleted, linewise }) => {
+		const { editor } = await createEditorInstance();
+		editor.setText(text);
+		editor.handleInput("\x1b");
+		for (const key of keys) editor.handleInput(key);
+
+		editor.handleInput("x");
+
+		expect(editor.getText()).toBe(remaining);
+		expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+		expect(editor.mode).toBe("normal");
+		expect(editor.getSelectionRange()).toBeNull();
+		expect(editor.register).toEqual({ text: deleted, linewise });
+	});
+
 	it("handles quoted text objects through the real editor", async () => {
 		const { editor } = await createEditorInstance();
 		editor.setText('say "hello world" end');
