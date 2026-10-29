@@ -24,6 +24,9 @@
     "extensions/buffer.ts",
     "extensions/core.ts",
     "extensions/clipboard.ts",
+    "extensions/cursor.ts",
+    "extensions/settings.ts",
+    "extensions/settings-ui.ts",
     "README.md",
     "demo.gif",
     "LICENSE"

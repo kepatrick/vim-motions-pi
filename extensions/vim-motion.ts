@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 
 import { CustomEditor, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { CURSOR_MARKER, decodeKittyPrintable, isKeyRelease, matchesKey, parseKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 import {
-	type ClipboardMode,
 	type Cursor,
 	type FindKind,
 	type Range,
@@ -18,7 +17,6 @@ import {
 	moveLeftIndex,
 	moveRightIndex,
 	nextWordStart,
-	normalizeClipboardMode,
 	prevWordStart,
 	normalizeText,
 	splitLines,
@@ -28,13 +26,14 @@ import {
 import { type BufferMotion, type Register, type TextObjectKind, type TextObjectPrefix, VimBuffer } from "./buffer";
 import { tryClipboardWrite } from "./clipboard";
 
-const clipboardState = {
-	mode: normalizeClipboardMode(process.env.VIM_MOTION_PI_CLIPBOARD),
-};
+import { defaultSettings, readSettings, saveSettings, settingsPath, type VimSettings } from "./settings";
+import { showVimSettings } from "./settings-ui";
+import { HardwareCursor, stripFakeCursor } from "./cursor";
 
-function updateClipboardMode(mode: ClipboardMode): void {
-	clipboardState.mode = mode;
-}
+let settings = defaultSettings();
+const clipboardState = {
+	get mode() { return settings.clipboard; },
+};
 
 function clipboardModeLabel(): string {
 	switch (clipboardState.mode) {
@@ -57,7 +56,7 @@ function copyToClipboard(text: string): void {
 		input,
 		encoding: "utf8",
 		stdio: ["pipe", "inherit", "ignore"],
-	}));
+	}), settings.clipboardCommand);
 }
 
 type Segment = {
@@ -155,26 +154,6 @@ function highlight(text: string, start: number, end: number): string {
 	return `${text.slice(0, start)}\x1b[7m${text.slice(start, end)}\x1b[27m${text.slice(end)}`;
 }
 
-const BAR_CURSOR = "▏";
-
-// Only restyle the marked editor cursor, never other reverse-video UI content.
-// A bar can replace a blank cell, but over text use an underline so the original
-// grapheme (including wide/combining characters) remains visible at the same width.
-export function barCursor(line: string): string {
-	const idx = line.indexOf(CURSOR_MARKER);
-	if (idx === -1) return line;
-	const start = idx + CURSOR_MARKER.length;
-	const after = line.slice(start);
-	// Pi 1.4+ wraps fake cursors in APC markers; older hosts use reverse video.
-	// Keep the wire-format fallback so this also loads on hosts without the new exports.
-	const match = after.match(/^\x1b_pi:fc\x07([\s\S]*?)\x1b_pi:\/fc\x07/)
-		?? after.match(/^\x1b\[7m([\s\S]*?)\x1b\[(?:0|27)m/);
-	if (!match) return line;
-	const grapheme = match[1]!;
-	const cursor = grapheme === " " ? BAR_CURSOR : `\x1b[4m${grapheme}\x1b[0m`;
-	return line.slice(0, start) + cursor + after.slice(match[0].length);
-}
-
 function splitAtVisibleColumn(text: string, column: number): [string, string] {
 	if (column <= 0) return ["", text];
 	let visible = 0;
@@ -210,18 +189,31 @@ class VimEditor extends CustomEditor {
 	private visualAnchor: number = 0;
 	private escapeTyped: string = "";
 	private escapeTypedAt: number = 0;
+	private hardwareCursor: HardwareCursor | undefined;
+
+	restoreCursor(): void {
+		this.hardwareCursor?.restore();
+	}
+
+	private syncCursor(): boolean {
+		this.hardwareCursor ??= new HardwareCursor((this as any).tui);
+		const style = this.mode === "insert" ? settings.insertCursor
+			: this.mode === "normal" ? settings.normalCursor
+			: this.mode === "visual" ? settings.visualCursor : settings.visualLineCursor;
+		return this.hardwareCursor.apply(style, this.renderIsFocused() && !(this as any).autocompleteState);
+	}
 
 	private getEscapeSequence(): string | null {
-		const env = process.env.VIM_MOTION_PI_ESCAPE_SEQUENCE;
-		if (!env) return null;
-		const seq = env.trim();
-		return seq.length >= 2 ? seq : null;
+		return settings.escapeSequence || null;
 	}
 
 	private getEscapeWindowMs(): number {
-		const v = process.env.VIM_MOTION_PI_ESCAPE_TIMEOUT_MS;
-		const n = v ? Number.parseInt(v, 10) : NaN;
-		return Number.isFinite(n) && n > 0 ? n : 100;
+		return settings.escapeTimeoutMs;
+	}
+
+	refreshSettings(): void {
+		this.escapeTyped = "";
+		this.requestRender();
 	}
 
 	private renderIsFocused(): boolean {
@@ -530,7 +522,7 @@ class VimEditor extends CustomEditor {
 		return out;
 	}
 
-	private renderVisual(width: number): string[] {
+	private renderVisual(width: number, hardwareCursor: boolean): string[] {
 		const paddingX = this.getPaddingX();
 		const contentWidth = Math.max(1, width - paddingX * 2);
 		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
@@ -589,11 +581,11 @@ class VimEditor extends CustomEditor {
 			if (line.hasCursor && line.cursorPos !== undefined) {
 				const [before, after] = splitAtVisibleColumn(displayText, line.cursorPos);
 				const marker = emitCursorMarker ? CURSOR_MARKER : "";
-				if (after.length > 0) {
+				if (visibleWidth(after) > 0) {
 					const [cursorChar, rest] = splitAtVisibleColumn(after, 1);
-					displayText = before + marker + `\x1b[4m${cursorChar}\x1b[24m` + rest;
+					displayText = before + marker + (hardwareCursor ? cursorChar : `\x1b[7m${cursorChar}\x1b[27m`) + rest;
 				} else {
-					displayText = before + marker + `\x1b[4m \x1b[24m`;
+					displayText = before + marker + (hardwareCursor ? " " : "\x1b[7m \x1b[27m");
 					lineVisibleWidth += 1;
 					if (lineVisibleWidth > contentWidth && paddingX > 0) cursorInPadding = true;
 				}
@@ -638,14 +630,19 @@ class VimEditor extends CustomEditor {
 
 		if (this.mode === "insert") {
 			const seq = this.getEscapeSequence();
-			// only single printable keystrokes feed the matcher; pastes and
-			// control sequences pass through untouched
-			if (seq && isPrintable(data) && !/[\u007f-\u009f]/.test(data)) {
+			// Key releases are not text and must neither complete nor cancel a prefix.
+			if (isKeyRelease(data)) {
+				super.handleInput(data);
+				return;
+			}
+			// Decode individual protocol-encoded keys, not multi-character pastes.
+			const key = isPrintable(data) ? data : decodeKittyPrintable(data) ?? parseKey(data);
+			if (seq && key && isPrintable(key) && !/[\u007f-\u009f]/.test(key)) {
 				const now = Date.now();
 				if (this.escapeTyped && now - this.escapeTypedAt > this.getEscapeWindowMs()) {
 					this.escapeTyped = "";
 				}
-				const candidate = this.escapeTyped + data;
+				const candidate = this.escapeTyped + key;
 				if (seq.startsWith(candidate)) {
 					this.escapeTyped = candidate;
 					this.escapeTypedAt = now;
@@ -659,7 +656,7 @@ class VimEditor extends CustomEditor {
 						return;
 					}
 				} else {
-					this.escapeTyped = data === seq[0] ? data : "";
+					this.escapeTyped = key === seq[0] ? key : "";
 					this.escapeTypedAt = now;
 				}
 			} else {
@@ -948,11 +945,12 @@ class VimEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		if (this.mode === "visual" || this.mode === "visual-line") return this.renderVisual(width);
+		const hardwareCursor = this.syncCursor();
+		if (this.mode === "visual" || this.mode === "visual-line") return this.renderVisual(width, hardwareCursor);
 		const lines = super.render(width);
 		if (lines.length === 0) return lines;
-		if (this.mode === "insert") {
-			for (let i = 0; i < lines.length; i++) lines[i] = barCursor(lines[i]!);
+		if (hardwareCursor) {
+			for (let i = 0; i < lines.length; i++) lines[i] = stripFakeCursor(lines[i]!, CURSOR_MARKER);
 		}
 		const label = this.mode === "normal" ? " NORMAL " : " INSERT ";
 		const last = lines.length - 1;
@@ -964,20 +962,41 @@ class VimEditor extends CustomEditor {
 }
 
 export default function (pi: ExtensionAPI) {
+	let editor: VimEditor | undefined;
+	let loadError: unknown;
+	try { settings = { ...defaultSettings(), ...readSettings() }; }
+	catch (error) { settings = defaultSettings(); loadError = error; }
+	const update = (patch: Partial<VimSettings>) => {
+		saveSettings(patch);
+		settings = { ...settings, ...patch };
+		editor?.refreshSettings();
+	};
+	pi.registerCommand("vim-settings", {
+		description: "Configure Vim escape sequence, cursors, and clipboard (saved globally)",
+		handler: async (_args, ctx) => {
+			if (ctx.hasUI === false) return;
+			await showVimSettings(ctx.ui, () => settings, update, settingsPath());
+		},
+	});
 	pi.registerCommand("vim-clipboard", {
 		description: "Choose clipboard sync mode",
 		handler: async (_args, ctx) => {
 			const choice = await ctx.ui.select("Clipboard sync mode:", ["Off", "All operations", "Yank only"]);
 			if (!choice) return;
-			if (choice === "Off") updateClipboardMode("off");
-			else if (choice === "All operations") updateClipboardMode("all");
-			else updateClipboardMode("yank");
-			ctx.ui.notify(clipboardStatusMessage(), "info");
+			try {
+				update({ clipboard: choice === "Off" ? "off" : choice === "All operations" ? "all" : "yank" });
+				ctx.ui.notify(clipboardStatusMessage(), "info");
+			} catch (error) { ctx.ui.notify(`Could not save Vim settings: ${error}`, "error"); }
 		},
 	});
 
+	pi.on("session_shutdown", () => editor?.restoreCursor());
 	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+			editor?.restoreCursor();
+			return (editor = new VimEditor(tui, theme, keybindings));
+		});
+		if (loadError) ctx.ui.notify(`Could not load ${settingsPath()}: ${loadError}`, "warning");
 		ctx.ui.notify(clipboardStatusMessage(), "info");
 	});
 }
