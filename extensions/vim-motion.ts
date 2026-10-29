@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 
 import { CustomEditor, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { CURSOR_MARKER, matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { CURSOR_MARKER, decodeKittyPrintable, isKeyRelease, matchesKey, parseKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 import {
-	type ClipboardMode,
 	type Cursor,
 	type FindKind,
 	type Range,
@@ -18,7 +17,6 @@ import {
 	moveLeftIndex,
 	moveRightIndex,
 	nextWordStart,
-	normalizeClipboardMode,
 	prevWordStart,
 	normalizeText,
 	splitLines,
@@ -28,13 +26,14 @@ import {
 import { type BufferMotion, type Register, type TextObjectKind, type TextObjectPrefix, VimBuffer } from "./buffer";
 import { tryClipboardWrite } from "./clipboard";
 
-const clipboardState = {
-	mode: normalizeClipboardMode(process.env.VIM_MOTION_PI_CLIPBOARD),
-};
+import { defaultSettings, readSettings, saveSettings, settingsPath, type VimSettings } from "./settings";
+import { showVimSettings } from "./settings-ui";
+import { HardwareCursor, stripFakeCursor } from "./cursor";
 
-function updateClipboardMode(mode: ClipboardMode): void {
-	clipboardState.mode = mode;
-}
+let settings = defaultSettings();
+const clipboardState = {
+	get mode() { return settings.clipboard; },
+};
 
 function clipboardModeLabel(): string {
 	switch (clipboardState.mode) {
@@ -57,7 +56,7 @@ function copyToClipboard(text: string): void {
 		input,
 		encoding: "utf8",
 		stdio: ["pipe", "inherit", "ignore"],
-	}));
+	}), settings.clipboardCommand);
 }
 
 type Segment = {
@@ -188,13 +187,33 @@ class VimEditor extends CustomEditor {
 	private lastFind: { kind: FindKind; ch: string; count: number } | null = null;
 	private register: Register = { text: "", linewise: false };
 	private visualAnchor: number = 0;
-	private escapeBuffer: string = "";
+	private escapeTyped: string = "";
+	private escapeTypedAt: number = 0;
+	private hardwareCursor: HardwareCursor | undefined;
+
+	restoreCursor(): void {
+		this.hardwareCursor?.restore();
+	}
+
+	private syncCursor(): boolean {
+		this.hardwareCursor ??= new HardwareCursor((this as any).tui);
+		const style = this.mode === "insert" ? settings.insertCursor
+			: this.mode === "normal" ? settings.normalCursor
+			: this.mode === "visual" ? settings.visualCursor : settings.visualLineCursor;
+		return this.hardwareCursor.apply(style, this.renderIsFocused() && !(this as any).autocompleteState);
+	}
 
 	private getEscapeSequence(): string | null {
-		const env = process.env.VIM_MOTION_PI_ESCAPE_SEQUENCE;
-		if (!env) return null;
-		const seq = env.trim();
-		return seq.length >= 2 ? seq : null;
+		return settings.escapeSequence || null;
+	}
+
+	private getEscapeWindowMs(): number {
+		return settings.escapeTimeoutMs;
+	}
+
+	refreshSettings(): void {
+		this.escapeTyped = "";
+		this.requestRender();
 	}
 
 	private renderIsFocused(): boolean {
@@ -503,7 +522,7 @@ class VimEditor extends CustomEditor {
 		return out;
 	}
 
-	private renderVisual(width: number): string[] {
+	private renderVisual(width: number, hardwareCursor: boolean): string[] {
 		const paddingX = this.getPaddingX();
 		const contentWidth = Math.max(1, width - paddingX * 2);
 		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
@@ -562,11 +581,11 @@ class VimEditor extends CustomEditor {
 			if (line.hasCursor && line.cursorPos !== undefined) {
 				const [before, after] = splitAtVisibleColumn(displayText, line.cursorPos);
 				const marker = emitCursorMarker ? CURSOR_MARKER : "";
-				if (after.length > 0) {
+				if (visibleWidth(after) > 0) {
 					const [cursorChar, rest] = splitAtVisibleColumn(after, 1);
-					displayText = before + marker + `\x1b[4m${cursorChar}\x1b[24m` + rest;
+					displayText = before + marker + (hardwareCursor ? cursorChar : `\x1b[7m${cursorChar}\x1b[27m`) + rest;
 				} else {
-					displayText = before + marker + `\x1b[4m \x1b[24m`;
+					displayText = before + marker + (hardwareCursor ? " " : "\x1b[7m \x1b[27m");
 					lineVisibleWidth += 1;
 					if (lineVisibleWidth > contentWidth && paddingX > 0) cursorInPadding = true;
 				}
@@ -596,6 +615,7 @@ class VimEditor extends CustomEditor {
 	handleInput(data: string): void {
 		if (matchesKey(data, "escape")) {
 			if (this.mode === "insert") {
+				this.escapeTyped = "";
 				this.setMode("normal");
 				return;
 			}
@@ -610,22 +630,39 @@ class VimEditor extends CustomEditor {
 
 		if (this.mode === "insert") {
 			const seq = this.getEscapeSequence();
-			if (seq) {
-				this.escapeBuffer += data;
-				if (this.escapeBuffer.endsWith(seq)) {
-					// Remove the escape sequence characters from the buffer
-					const toRemove = seq.length;
-					for (let i = 0; i < toRemove - 1; i++) {
-						super.handleInput("\x7f"); // backspace
+			// Key releases are not text and must neither complete nor cancel a prefix.
+			if (isKeyRelease(data)) {
+				super.handleInput(data);
+				return;
+			}
+			// Decode individual protocol-encoded keys, not multi-character pastes.
+			const key = isPrintable(data) ? data : decodeKittyPrintable(data) ?? parseKey(data);
+			if (seq && key && isPrintable(key) && !/[\u007f-\u009f]/.test(key)) {
+				const now = Date.now();
+				if (this.escapeTyped && now - this.escapeTypedAt > this.getEscapeWindowMs()) {
+					this.escapeTyped = "";
+				}
+				const candidate = this.escapeTyped + key;
+				if (seq.startsWith(candidate)) {
+					this.escapeTyped = candidate;
+					this.escapeTypedAt = now;
+					if (candidate === seq) {
+						this.escapeTyped = "";
+						// earlier prefix chars are already in the buffer; delete them
+						for (let i = 1; i < seq.length; i++) {
+							super.handleInput("\x7f");
+						}
+						this.setMode("normal");
+						return;
 					}
-					this.escapeBuffer = "";
-					this.setMode("normal");
-					return;
+				} else {
+					this.escapeTyped = key === seq[0] ? key : "";
+					this.escapeTypedAt = now;
 				}
-				// Only keep the last N characters where N = sequence length
-				if (this.escapeBuffer.length > seq.length) {
-					this.escapeBuffer = this.escapeBuffer.slice(-seq.length);
-				}
+			} else {
+				// Movement, deletion, paste, and other control input invalidate
+				// the assumption that the prefix is immediately before the cursor.
+				this.escapeTyped = "";
 			}
 			super.handleInput(data);
 			return;
@@ -908,9 +945,13 @@ class VimEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		if (this.mode === "visual" || this.mode === "visual-line") return this.renderVisual(width);
+		const hardwareCursor = this.syncCursor();
+		if (this.mode === "visual" || this.mode === "visual-line") return this.renderVisual(width, hardwareCursor);
 		const lines = super.render(width);
 		if (lines.length === 0) return lines;
+		if (hardwareCursor) {
+			for (let i = 0; i < lines.length; i++) lines[i] = stripFakeCursor(lines[i]!, CURSOR_MARKER);
+		}
 		const label = this.mode === "normal" ? " NORMAL " : " INSERT ";
 		const last = lines.length - 1;
 		if (visibleWidth(lines[last]!) >= label.length) {
@@ -921,20 +962,41 @@ class VimEditor extends CustomEditor {
 }
 
 export default function (pi: ExtensionAPI) {
+	let editor: VimEditor | undefined;
+	let loadError: unknown;
+	try { settings = { ...defaultSettings(), ...readSettings() }; }
+	catch (error) { settings = defaultSettings(); loadError = error; }
+	const update = (patch: Partial<VimSettings>) => {
+		saveSettings(patch);
+		settings = { ...settings, ...patch };
+		editor?.refreshSettings();
+	};
+	pi.registerCommand("vim-settings", {
+		description: "Configure Vim escape sequence, cursors, and clipboard (saved globally)",
+		handler: async (_args, ctx) => {
+			if (ctx.hasUI === false) return;
+			await showVimSettings(ctx.ui, () => settings, update, settingsPath());
+		},
+	});
 	pi.registerCommand("vim-clipboard", {
 		description: "Choose clipboard sync mode",
 		handler: async (_args, ctx) => {
 			const choice = await ctx.ui.select("Clipboard sync mode:", ["Off", "All operations", "Yank only"]);
 			if (!choice) return;
-			if (choice === "Off") updateClipboardMode("off");
-			else if (choice === "All operations") updateClipboardMode("all");
-			else updateClipboardMode("yank");
-			ctx.ui.notify(clipboardStatusMessage(), "info");
+			try {
+				update({ clipboard: choice === "Off" ? "off" : choice === "All operations" ? "all" : "yank" });
+				ctx.ui.notify(clipboardStatusMessage(), "info");
+			} catch (error) { ctx.ui.notify(`Could not save Vim settings: ${error}`, "error"); }
 		},
 	});
 
+	pi.on("session_shutdown", () => editor?.restoreCursor());
 	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+			editor?.restoreCursor();
+			return (editor = new VimEditor(tui, theme, keybindings));
+		});
+		if (loadError) ctx.ui.notify(`Could not load ${settingsPath()}: ${loadError}`, "warning");
 		ctx.ui.notify(clipboardStatusMessage(), "info");
 	});
 }

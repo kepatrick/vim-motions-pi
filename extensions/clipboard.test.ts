@@ -62,6 +62,17 @@ describe("tryClipboardWrite", () => {
 		expect(run).not.toHaveBeenCalled();
 	});
 
+	it("uses the saved command ahead of the environment, including auto-detection", () => {
+		vi.stubEnv("VIM_MOTION_PI_CLIPBOARD_COMMAND", "env-copy");
+		try {
+			const run = vi.fn().mockReturnValue({ status: 0 });
+			expect(tryClipboardWrite("hello", "linux", run, "saved-copy --flag")).toBe(true);
+			expect(run).toHaveBeenLastCalledWith("saved-copy", ["--flag"], "hello");
+			expect(tryClipboardWrite("hello", "linux", run, "")).toBe(true);
+			expect(run).toHaveBeenLastCalledWith("wl-copy", [], "hello");
+		} finally { vi.unstubAllEnvs(); }
+	});
+
 	it("uses custom command when env var is set", () => {
 		vi.stubEnv("VIM_MOTION_PI_CLIPBOARD_COMMAND", "custom-copy --flag");
 		const run = vi.fn().mockReturnValue({ status: 0 });

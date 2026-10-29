@@ -1,10 +1,10 @@
 export type ClipboardAttempt = { command: string; args: string[] };
 export type ClipboardRunner = (command: string, args: string[], text: string) => { error?: unknown; status: number | null | undefined };
 
-export function clipboardAttemptsForPlatform(platform: NodeJS.Platform): ClipboardAttempt[] {
+export function clipboardAttemptsForPlatform(platform: NodeJS.Platform, customCommand?: string): ClipboardAttempt[] {
 	// Allow overriding the clipboard command via env var.
 	// Format: "command" or "command arg1 arg2 ..."
-	const custom = process.env.VIM_MOTION_PI_CLIPBOARD_COMMAND;
+	const custom = (customCommand ?? process.env.VIM_MOTION_PI_CLIPBOARD_COMMAND)?.trim();
 	if (custom) {
 		const parts = custom.trim().split(/\s+/);
 		return [{ command: parts[0]!, args: parts.slice(1) }];
@@ -24,9 +24,9 @@ export function clipboardAttemptsForPlatform(platform: NodeJS.Platform): Clipboa
 	];
 }
 
-export function tryClipboardWrite(text: string, platform: NodeJS.Platform, run: ClipboardRunner): boolean {
+export function tryClipboardWrite(text: string, platform: NodeJS.Platform, run: ClipboardRunner, customCommand?: string): boolean {
 	if (!text) return false;
-	for (const attempt of clipboardAttemptsForPlatform(platform)) {
+	for (const attempt of clipboardAttemptsForPlatform(platform, customCommand)) {
 		const result = run(attempt.command, attempt.args, text);
 		if (!result.error && result.status === 0) return true;
 	}

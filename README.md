@@ -58,6 +58,8 @@ pi -e ./extensions/vim-motion.ts
 - Find motions: `f F t T`
 - Repeat find: `;` and `,`
 
+In insert mode, the focused cursor is a real terminal bar, both at the end of a line and over text. Normal mode defaults to a block. All four modes have configurable cursor shapes; text underneath is never replaced.
+
 ### Editing actions
 - Operators: `d y c`
 - Motion-based edits: `dw`, `yw`, `cw`, `d$`, `y^`, etc.
@@ -91,32 +93,42 @@ pi -e ./extensions/vim-motion.ts
 - `p` and `P` paste from that register.
 - Linewise operations keep line breaks when that makes sense.
 
+## Settings inside pi
+
+Run `/vim-settings` to change settings without restarting:
+
+- Escape sequence: 2–32 printable ASCII characters (case-sensitive), or empty to disable.
+- Escape timeout: 1–60000 ms between consecutive keys.
+- Cursor style independently for Insert, Normal, Visual, and Visual-line modes: `block`, `bar`, or `underline`.
+- Clipboard sync: off, yank only, or all operations.
+- Clipboard command: custom executable and whitespace-separated arguments, or empty for OS auto-detection. Commands are not run through a shell.
+
+Changes apply immediately and are saved in `~/.pi/agent/vim-motions.json` (or `$PI_CODING_AGENT_DIR/vim-motions.json`). Saved values override environment variables; unset values still use environment defaults. `/vim-clipboard` remains available and saves to the same file. Escape cancels the current dialog; edits already saved remain in effect.
+
+Cursor styles use the real terminal cursor (DECSCUSR): `bar` stays a vertical bar everywhere, `block` stays a block, and `underline` stays an underline. Your terminal must support cursor-shape escape sequences. Pi's fake cursor decoration is removed without replacing any text. When the editor loses focus or the session shuts down, hardware-cursor visibility is restored and the shape resets to the terminal default. Older Pi hosts without hardware-cursor control retain their default cursor. Selection highlighting remains separate from cursor shape.
+
+If the settings file is malformed, pi warns and uses defaults; fix the file before saving further changes so the original file is not silently overwritten.
+
 ## Optional clipboard sync
 Keep the unnamed register in sync with your system clipboard.
 
-Set one parameter:
+Open `/vim-settings` and choose **Clipboard sync**:
 
-```bash
-VIM_MOTION_PI_CLIPBOARD=off|all|yank
-```
+- **Off** (`off`): disable clipboard sync.
+- **Yank only** (`yank`): sync only yank operations.
+- **All operations** (`all`): sync yank, delete, and change operations.
 
-- `off`: disable clipboard sync
-- `all`: sync yank, delete, and change operations
-- `yank`: sync only yank operations
+The choice takes effect immediately and is saved for future sessions. `/vim-clipboard` is a backward-compatible shortcut to the same setting, not a separate configuration.
 
-Change it inside pi with:
-
-```text
-/vim-clipboard
-```
-
-pi shows a short notification when the mode changes.
+For shell-based configuration, `VIM_MOTION_PI_CLIPBOARD=off|all|yank` is still supported as a default when no saved clipboard setting exists.
 
 When enabled, the extension uses the usual clipboard command on your OS (`pbcopy`, `clip`, `wl-copy`, `xclip`, or `xsel`) if available.
 
 ### Custom clipboard command
 
-Override the auto-detected clipboard command with your own:
+In `/vim-settings`, choose **Clipboard command** and enter a command such as `my-clipboard-tool --copy`. Leave it empty to restore OS auto-detection, including when an environment override is set.
+
+Alternatively, set an environment default:
 
 ```bash
 VIM_MOTION_PI_CLIPBOARD_COMMAND="my-clipboard-tool --copy"
@@ -128,15 +140,22 @@ This is useful inside tmux/SSH sessions where `wl-copy` or `xclip` may not work,
 
 ## Custom escape sequence
 
-By default only `Esc` leaves insert mode. You can enable a two-key sequence such as `jk` or `jj`:
+By default only `Esc` leaves insert mode. Open `/vim-settings` and choose **Escape sequence** to enable a sequence. Letters do not have to differ, and symbols are supported: `jk`, `jj`, `//`, `''`, and `'/` are all valid. Enter the sequence directly without wrapping it in quotes. An empty value disables it.
+
+Choose **Escape timeout** in the same menu to set the maximum interval between consecutive keys. The default is **100 ms**, which is quite strict; try **300–500 ms** if ordinary typing does not trigger the sequence. Confirm the new value appears in the settings menu. Changes apply immediately without restarting.
+
+Environment defaults remain available for settings that have not been saved:
 
 ```bash
 VIM_MOTION_PI_ESCAPE_SEQUENCE=jk
+VIM_MOTION_PI_ESCAPE_TIMEOUT_MS=300
 ```
 
-- The sequence must be at least two characters.
-- While typing in insert mode, the extension buffers keystrokes. When the buffer ends with the configured sequence, the sequence characters are deleted and the editor returns to normal mode.
-- If you partially match (e.g. typed `j` but then pressed `l`), the `j` is preserved and passed through.
+- The sequence must contain 2–32 printable ASCII characters.
+- Keys are inserted instantly as you type. When the sequence completes within the window (default 100 ms), the already-typed sequence characters are deleted and the editor returns to normal mode.
+- If the next key arrives after the window or is a different key, the already-inserted text remains. Pressing a real `Esc` also keeps that text and exits insert mode.
+- Tune the window with `VIM_MOTION_PI_ESCAPE_TIMEOUT_MS` (e.g. `50` for a tighter escape, `300` for more slack).
+- Only consecutive single printable keystrokes feed the matcher. Pasted text, arrow keys, Backspace, and other control input pass through unchanged and cancel any pending sequence prefix.
 
 ## Examples
 
