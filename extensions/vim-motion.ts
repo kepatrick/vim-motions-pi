@@ -757,6 +757,10 @@ class VimEditor extends CustomEditor {
 				this.swapVisualEnds();
 				return;
 			}
+			if (data === "x") {
+				this.applyOperatorToSelection("d");
+				return;
+			}
 			if (data === "d" || data === "y" || data === "c") {
 				const op = data as Operator;
 				this.applyOperatorToSelection(op);
